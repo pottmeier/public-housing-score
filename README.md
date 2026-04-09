@@ -15,8 +15,8 @@ Eine webbasierte Anwendung zur objektiven Bewertung der Wohnqualität von Nachba
 ## 🚀 Installation
 
 ```bash
-git clone https://github.com/pottmeier/housing-score.git
-cd housing-score
+git clone https://github.com/pottmeier/public-housing-score.git
+cd public-housing-score
 docker compose up --build
 ```
 
