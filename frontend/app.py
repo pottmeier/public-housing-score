@@ -768,6 +768,78 @@ if st.session_state.search_result:
                 "Pinnen Sie Ergebnisse in der Registerkarte 'Aktuelle Ergebnisse', um sie hier zu vergleichen."
             )
         else:
+            # Export aggregate data for all pinned results
+            st.subheader("📥 Alle Ergebnisse exportieren")
+            col_exp_agg1, col_exp_agg2 = st.columns(2)
+
+            # Aggregate CSV export
+            with col_exp_agg1:
+                aggregate_data = []
+                for pinned in st.session_state.pinned_results:
+                    for detail in pinned["details"]:
+                        aggregate_data.append(
+                            {
+                                "Adresse": pinned["address"],
+                                "Gesamtscore": f"{pinned['score']:.1f}",
+                                "Suchradius (m)": pinned.get("radius", 1500),
+                                "Kategorie": CATEGORY_NAMES[detail["category"]]
+                                .replace("🛒 ", "")
+                                .replace("👨‍⚕️ ", "")
+                                .replace("🚌 ", "")
+                                .replace("🌳 ", "")
+                                .replace("💼 ", ""),
+                                "Punktzahl": f"{detail['score']:.1f}",
+                                "Nächstes Objekt (m)": f"{detail['nearest_po_dist']:.0f}",
+                                "In der Nähe": detail["count_nearby"],
+                            }
+                        )
+                aggregate_df = pl.DataFrame(aggregate_data)
+                csv = aggregate_df.write_csv()
+                st.download_button(
+                    label="📥 Alle als CSV",
+                    data=csv,
+                    file_name=f"wohnungsqualitaet-vergleich_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                )
+
+            # Aggregate JSON export
+            with col_exp_agg2:
+                aggregate_json = {
+                    "timestamp": datetime.now().isoformat(),
+                    "anzahl_vergleiche": len(st.session_state.pinned_results),
+                    "ergebnisse": [
+                        {
+                            "adresse": pinned["address"],
+                            "gesamtscore": round(pinned["score"], 1),
+                            "suchradius_meter": pinned.get("radius", 1500),
+                            "zeitstempel": pinned.get("timestamp", ""),
+                            "kategorien": [
+                                {
+                                    "name": detail["category"],
+                                    "punktzahl": round(detail["score"], 1),
+                                    "entfernung_meter": round(
+                                        detail["nearest_po_dist"], 0
+                                    ),
+                                    "anzahl_in_naehe": detail["count_nearby"],
+                                }
+                                for detail in pinned["details"]
+                            ],
+                        }
+                        for pinned in st.session_state.pinned_results
+                    ],
+                }
+                import json
+
+                json_str = json.dumps(aggregate_json, ensure_ascii=False, indent=2)
+                st.download_button(
+                    label="📥 Alle als JSON",
+                    data=json_str,
+                    file_name=f"wohnungsqualitaet-vergleich_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json",
+                )
+
+            st.divider()
+
             for idx, pinned in enumerate(st.session_state.pinned_results):
                 col_pin1, col_pin2 = st.columns([3, 1])
 
