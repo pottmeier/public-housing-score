@@ -33,6 +33,12 @@ DEFAULT_WEIGHTS = {
 DEFAULT_WORKPLACE_WEIGHT = 0.2
 
 
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for container orchestration"""
+    return {"status": "healthy"}
+
+
 @app.post("/api/score", response_model=ScoreResponse)
 async def create_score(req: AddressRequest):
     request_start = time.time()

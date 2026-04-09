@@ -20,7 +20,7 @@ USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-    CMD curl --fail http://localhost:8000/docs || exit 1
+    CMD curl --fail http://localhost:8000/health || exit 1
 
 # Expose API port
 EXPOSE 8000
