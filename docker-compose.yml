@@ -1,0 +1,39 @@
+services:
+  # Backend (FastAPI Python REST API)
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    restart: always
+    volumes:
+      - ./backend/app:/app/app
+    networks:
+      - app
+    environment:
+      - PYTHONUNBUFFERED=1
+
+  # Frontend (Streamlit Web Application)
+  streamlit:
+    build: ./frontend
+    ports:
+      - "8501:8501"
+    environment:
+      - API_BASE_URL=http://backend:8000
+    depends_on:
+      - backend
+    restart: always
+    networks:
+      - app
+
+  # Cache Layer (Redis)
+  redis:
+    image: redis:alpine
+    restart: always
+    networks:
+      - app
+
+networks:
+  app:
+    driver: bridge
