@@ -8,6 +8,9 @@ class AddressRequest(BaseModel):
     radius: Optional[int] = None
     workplace_address: Optional[str] = None
     workplace_weight: Optional[float] = None
+    ideal_distances: Optional[Dict[str, float]] = (
+        None  # in Metern, z.B. {"supermarket": 300, "doctor": 500, ...}
+    )
 
 
 class POI(BaseModel):

@@ -32,6 +32,15 @@ DEFAULT_WEIGHTS = {
 
 DEFAULT_WORKPLACE_WEIGHT = 0.2
 
+# Standardmäßige ideale Distanzen in Metern
+DEFAULT_IDEAL_DISTANCES = {
+    "supermarket": 300,
+    "doctor": 500,
+    "public_transport": 400,
+    "park": 400,
+    "workplace": 1000,
+}
+
 
 @app.get("/health")
 async def health_check():
@@ -46,6 +55,11 @@ async def create_score(req: AddressRequest):
 
     # Use custom weights or defaults
     weights = req.weights if req.weights else DEFAULT_WEIGHTS.copy()
+
+    # Use custom ideal_distances or defaults
+    ideal_distances = (
+        req.ideal_distances if req.ideal_distances else DEFAULT_IDEAL_DISTANCES.copy()
+    )
 
     # Workplace handling
     workplace_weight = (
@@ -120,8 +134,16 @@ async def create_score(req: AddressRequest):
                     lon=workplace_geo["lon"],
                     distance=round(min_dist, 0),
                 )
-                cat_score = calculate_score(min_dist, ideal_dist=1000, decay=1500)
-                logger.info(f"workplace: distance to workplace is {min_dist:.0f}m")
+                ideal_dist_workplace = ideal_distances.get(
+                    "workplace", DEFAULT_IDEAL_DISTANCES["workplace"]
+                )
+                decay_workplace = ideal_dist_workplace * 1.3
+                cat_score = calculate_score(
+                    min_dist, ideal_dist=ideal_dist_workplace, decay=decay_workplace
+                )
+                logger.info(
+                    f"workplace: distance to workplace is {min_dist:.0f}m, ideal_dist={ideal_dist_workplace}m, decay={decay_workplace:.0f}m"
+                )
             else:
                 cat_score = 0
                 logger.warning("workplace: No workplace address provided!")
@@ -157,8 +179,16 @@ async def create_score(req: AddressRequest):
                     f"{category}: found {len(pois)} POIs, nearest at {min_dist:.0f}m"
                 )
 
-            decay_val = 500 if category == "supermarket" else 1000
-            cat_score = calculate_score(min_dist, ideal_dist=300, decay=decay_val)
+            ideal_dist_cat = ideal_distances.get(
+                category, DEFAULT_IDEAL_DISTANCES.get(category, 300)
+            )
+            decay_cat = ideal_dist_cat * 1.3
+            cat_score = calculate_score(
+                min_dist, ideal_dist=ideal_dist_cat, decay=decay_cat
+            )
+            logger.info(
+                f"{category}: ideal_dist={ideal_dist_cat}m, decay={decay_cat:.0f}m"
+            )
 
             if not pois:
                 cat_score = 0

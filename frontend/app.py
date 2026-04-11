@@ -55,8 +55,21 @@ if "workplace_address" not in st.session_state:
     st.session_state.workplace_address = ""
 if "radius" not in st.session_state:
     st.session_state.radius = 1500
+if "ideal_distances" not in st.session_state:
+    # Initial mit der Hälfte des Standard-Radius (1500m)
+    st.session_state.ideal_distances = {
+        "supermarket": 750,
+        "doctor": 750,
+        "public_transport": 750,
+        "park": 750,
+        "workplace": 750,
+    }
 if "pinned_results" not in st.session_state:
     st.session_state.pinned_results = []
+if "prev_weights" not in st.session_state:
+    st.session_state.prev_weights = None
+if "prev_ideal_distances" not in st.session_state:
+    st.session_state.prev_ideal_distances = None
 
 # Farben für gepinnte Suchradien (unterschiedliche Farben für bis zu 10 gepinnte Ergebnisse)
 PINNED_RADIUS_COLORS = [
@@ -136,7 +149,12 @@ def score_to_emoji(score):
 
 
 def fetch_score(
-    address, weights, radius, workplace_address=None, workplace_weight=None
+    address,
+    weights,
+    radius,
+    workplace_address=None,
+    workplace_weight=None,
+    ideal_distances=None,
 ):
     try:
         payload = {
@@ -145,6 +163,7 @@ def fetch_score(
             "radius": radius,
             "workplace_address": workplace_address,
             "workplace_weight": workplace_weight,
+            "ideal_distances": ideal_distances,
         }
         response = requests.post(f"{API_BASE_URL}/api/score", json=payload, timeout=20)
         response.raise_for_status()
@@ -319,14 +338,19 @@ st.markdown(
 with st.sidebar:
     st.header("⚙️ Einstellungen")
 
-    st.subheader("🎯 Gewichtungspräferenzen")
+    st.subheader("🎯 Gewichtungspräferenzen & Ideale Entfernungen")
 
     weights = {}
+    ideal_distances = {}
     total_weight_placeholder = st.empty()
 
+    # Berechne dynamischen Default basierend auf aktuellem Radius
+    default_ideal = st.session_state.radius // 2
+
+    # Supermärkte
     weights["supermarket"] = (
         st.slider(
-            "Supermärkte",
+            "🛒 Supermärkte",
             min_value=0,
             max_value=100,
             value=int(st.session_state.weights.get("supermarket", 0.3) * 100),
@@ -334,10 +358,20 @@ with st.sidebar:
         )
         / 100.0
     )
+    ideal_distances["supermarket"] = st.slider(
+        "Ideale Entfernung (Supermärkte)",
+        min_value=50,
+        max_value=st.session_state.radius,
+        value=default_ideal,
+        step=50,
+    )
 
+    st.divider()
+
+    # Medizinische Einrichtungen
     weights["doctor"] = (
         st.slider(
-            "Medizinische Einrichtungen",
+            "👨‍⚕️ Medizinische Einrichtungen",
             min_value=0,
             max_value=100,
             value=int(st.session_state.weights.get("doctor", 0.2) * 100),
@@ -345,10 +379,20 @@ with st.sidebar:
         )
         / 100.0
     )
+    ideal_distances["doctor"] = st.slider(
+        "Ideale Entfernung",
+        min_value=50,
+        max_value=st.session_state.radius,
+        value=default_ideal,
+        step=50,
+    )
 
+    st.divider()
+
+    # Öffentliche Verkehrsmittel
     weights["public_transport"] = (
         st.slider(
-            "Öffentliche Verkehrsmittel",
+            "🚌 Öffentliche Verkehrsmittel",
             min_value=0,
             max_value=100,
             value=int(st.session_state.weights.get("public_transport", 0.3) * 100),
@@ -356,16 +400,32 @@ with st.sidebar:
         )
         / 100.0
     )
+    ideal_distances["public_transport"] = st.slider(
+        "Ideale Entfernung (ÖPNV)",
+        min_value=50,
+        max_value=st.session_state.radius,
+        value=default_ideal,
+        step=50,
+    )
+    st.divider()
 
+    # Parks
     weights["park"] = (
         st.slider(
-            "Parks / Grünflächen",
+            "🌳 Parks",
             min_value=0,
             max_value=100,
             value=int(st.session_state.weights.get("park", 0.2) * 100),
             step=5,
         )
         / 100.0
+    )
+    ideal_distances["park"] = st.slider(
+        "Ideale Entfernung (Parks)",
+        min_value=50,
+        max_value=st.session_state.radius,
+        value=default_ideal,
+        step=50,
     )
 
     total = sum(weights.values())
@@ -387,7 +447,14 @@ with st.sidebar:
         else:
             st.metric("Gesamtgewicht", f"{total_percent:.1f}%", delta="✅")
 
+    # Überprüfe ob Gewichte oder Idealdistanzen sich geändert haben (nur gegen prev values)
+    weights_changed = st.session_state.prev_weights != weights
+    ideal_distances_changed = st.session_state.prev_ideal_distances != ideal_distances
+
     st.session_state.weights = weights
+    st.session_state.ideal_distances = ideal_distances
+    st.session_state.prev_weights = weights
+    st.session_state.prev_ideal_distances = ideal_distances
 
     st.divider()
 
@@ -417,10 +484,17 @@ with st.sidebar:
             )
             / 100.0
         )
-        st.caption(f"Gewicht: {st.session_state.workplace_weight:.1%}")
+        ideal_distances["workplace"] = st.slider(
+            "Ideale Entfernung (Arbeitsplatz)",
+            min_value=1000,
+            max_value=120000,
+            value=1000,
+            step=1000,
+        )
     else:
         st.session_state.workplace_weight = 0.2
         st.caption("Adresse eingeben, um Arbeitsplatz einzubeziehen")
+        ideal_distances["workplace"] = default_ideal
 
     st.divider()
 
@@ -471,6 +545,26 @@ with st.sidebar:
     #     help="Die URL, unter der die Wohnungsqualität-API läuft",
     # )
 
+    # Arbeitsplatz Idealentfernung hinzufügen
+    # if workplace_address:
+    #     col1, col2 = st.columns(2)
+    #     with col1:
+    #         st.caption("💼 Arbeitsplatz - Gewicht bereits oben")
+    #     with col2:
+    #         ideal_distances["workplace"] = st.slider(
+    #             "💼 Arbeitsplatz - Ideale Entfernung",
+    #             min_value=100,
+    #             max_value=min(st.session_state.radius * 2, 10000),
+    #             value=st.session_state.ideal_distances.get(
+    #                 "workplace", st.session_state.radius // 2
+    #             ),
+    #             step=100,
+    #         )
+    # else:
+    #     ideal_distances["workplace"] = st.session_state.ideal_distances.get(
+    #         "workplace", st.session_state.radius // 2
+    #     )
+
     st.divider()
     st.markdown("### ℹ️ Über die App")
     st.info("""
@@ -497,7 +591,14 @@ with col2:
     search_button = st.button("🔍 Bewerten", width="stretch")
 
 
-def perform_search(address_input, weights, radius, workplace_address, workplace_weight):
+def perform_search(
+    address_input,
+    weights,
+    radius,
+    workplace_address,
+    workplace_weight,
+    ideal_distances=None,
+):
     search_container = st.container()
 
     with search_container:
@@ -516,6 +617,7 @@ def perform_search(address_input, weights, radius, workplace_address, workplace_
             radius,
             workplace_address=workplace_address if workplace_address else None,
             workplace_weight=workplace_weight if workplace_address else None,
+            ideal_distances=ideal_distances,
         )
         elapsed = time.time() - start_time
 
@@ -534,7 +636,10 @@ def perform_search(address_input, weights, radius, workplace_address, workplace_
 
 
 auto_search_triggered = (
-    trigger_search_workplace or trigger_search_radius
+    trigger_search_workplace
+    or trigger_search_radius
+    or weights_changed
+    or ideal_distances_changed
 ) and st.session_state.search_result
 
 if search_button and address_input:
@@ -544,6 +649,7 @@ if search_button and address_input:
         st.session_state.radius,
         st.session_state.workplace_address,
         st.session_state.workplace_weight,
+        st.session_state.ideal_distances,
     )
 elif auto_search_triggered and st.session_state.last_address:
     perform_search(
@@ -552,6 +658,7 @@ elif auto_search_triggered and st.session_state.last_address:
         st.session_state.radius,
         st.session_state.workplace_address,
         st.session_state.workplace_weight,
+        st.session_state.ideal_distances,
     )
 
 if st.session_state.search_result:
@@ -605,10 +712,13 @@ if st.session_state.search_result:
     st.markdown("**Kartenlegende:**")
     col_legend1, col_legend2 = st.columns(2)
 
-    legend_items = [(cat, color) for cat, color in COLOR_MAPPING.items()]
-
-    if result.get("workplace_lat") and result.get("workplace_lon"):
-        legend_items.append(("workplace", "#FFA726"))
+    # Nur POI-Kategorien (nicht workplace) in Legende, wenn keine Arbeitsplatz-Daten vorhanden
+    legend_items = [
+        (cat, color)
+        for cat, color in COLOR_MAPPING.items()
+        if cat != "workplace"
+        or (result.get("workplace_lat") and result.get("workplace_lon"))
+    ]
 
     for idx, (category, color) in enumerate(legend_items):
         if idx < 2:
@@ -663,6 +773,7 @@ if st.session_state.search_result:
         emoji = score_to_emoji(detail["score"])
         category_name = CATEGORY_NAMES.get(category, category)
         weight = result.get("weights_applied", {}).get(category, 0)
+        ideal_dist = st.session_state.ideal_distances.get(category, "N/A")
 
         card_html = f"""
         <div class="metric-card {color_class}">
@@ -676,6 +787,9 @@ if st.session_state.search_result:
             </p>
             <p style="font-size: 11px; color: #999;">
                 Gewichtung: {weight:.1%}
+            </p>
+            <p style="font-size: 11px; color: #999;">
+                Ideale Entfernung: {ideal_dist}m
             </p>
         </div>
         """
@@ -707,6 +821,9 @@ if st.session_state.search_result:
                     "Nächstes Objekt (m)": f"{d['nearest_po_dist']:.0f}",
                     "In der Nähe": d["count_nearby"],
                     "Gewichtung": f"{result.get('weights_applied', {}).get(d['category'], 0):.1%}",
+                    "Ideale Entfernung (m)": st.session_state.ideal_distances.get(
+                        d["category"], "N/A"
+                    ),
                 }
                 for d in result["details"]
             ]
@@ -755,6 +872,7 @@ if st.session_state.search_result:
                     "timestamp": datetime.now().isoformat(),
                     "details": result["details"],
                     "weights_applied": result.get("weights_applied", {}),
+                    "ideal_distances": st.session_state.ideal_distances,  # Speichere ideale Distanzen
                 }
                 st.session_state.pinned_results.append(pinned_entry)
                 st.success(f"✅ Ergebnis für '{fixed_address}' gepinnt!")
@@ -768,78 +886,6 @@ if st.session_state.search_result:
                 "Pinnen Sie Ergebnisse in der Registerkarte 'Aktuelle Ergebnisse', um sie hier zu vergleichen."
             )
         else:
-            # Export aggregate data for all pinned results
-            st.subheader("📥 Alle Ergebnisse exportieren")
-            col_exp_agg1, col_exp_agg2 = st.columns(2)
-
-            # Aggregate CSV export
-            with col_exp_agg1:
-                aggregate_data = []
-                for pinned in st.session_state.pinned_results:
-                    for detail in pinned["details"]:
-                        aggregate_data.append(
-                            {
-                                "Adresse": pinned["address"],
-                                "Gesamtscore": f"{pinned['score']:.1f}",
-                                "Suchradius (m)": pinned.get("radius", 1500),
-                                "Kategorie": CATEGORY_NAMES[detail["category"]]
-                                .replace("🛒 ", "")
-                                .replace("👨‍⚕️ ", "")
-                                .replace("🚌 ", "")
-                                .replace("🌳 ", "")
-                                .replace("💼 ", ""),
-                                "Punktzahl": f"{detail['score']:.1f}",
-                                "Nächstes Objekt (m)": f"{detail['nearest_po_dist']:.0f}",
-                                "In der Nähe": detail["count_nearby"],
-                            }
-                        )
-                aggregate_df = pl.DataFrame(aggregate_data)
-                csv = aggregate_df.write_csv()
-                st.download_button(
-                    label="📥 Alle als CSV",
-                    data=csv,
-                    file_name=f"wohnungsqualitaet-vergleich_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv",
-                )
-
-            # Aggregate JSON export
-            with col_exp_agg2:
-                aggregate_json = {
-                    "timestamp": datetime.now().isoformat(),
-                    "anzahl_vergleiche": len(st.session_state.pinned_results),
-                    "ergebnisse": [
-                        {
-                            "adresse": pinned["address"],
-                            "gesamtscore": round(pinned["score"], 1),
-                            "suchradius_meter": pinned.get("radius", 1500),
-                            "zeitstempel": pinned.get("timestamp", ""),
-                            "kategorien": [
-                                {
-                                    "name": detail["category"],
-                                    "punktzahl": round(detail["score"], 1),
-                                    "entfernung_meter": round(
-                                        detail["nearest_po_dist"], 0
-                                    ),
-                                    "anzahl_in_naehe": detail["count_nearby"],
-                                }
-                                for detail in pinned["details"]
-                            ],
-                        }
-                        for pinned in st.session_state.pinned_results
-                    ],
-                }
-                import json
-
-                json_str = json.dumps(aggregate_json, ensure_ascii=False, indent=2)
-                st.download_button(
-                    label="📥 Alle als JSON",
-                    data=json_str,
-                    file_name=f"wohnungsqualitaet-vergleich_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                    mime="application/json",
-                )
-
-            st.divider()
-
             for idx, pinned in enumerate(st.session_state.pinned_results):
                 col_pin1, col_pin2 = st.columns([3, 1])
 
@@ -872,12 +918,92 @@ if st.session_state.search_result:
                             "Punktzahl": f"{d['score']}/100",
                             "Nächstes Objekt (m)": f"{d['nearest_po_dist']:.0f}",
                             "In der Nähe": d["count_nearby"],
+                            "Gewichtung": f"{pinned.get('weights_applied', {}).get(d['category'], 0):.1%}",
+                            "Ideale Entfernung (m)": pinned.get(
+                                "ideal_distances", {}
+                            ).get(d["category"], "N/A"),
                         }
                         for d in pinned["details"]
                     ]
                 )
                 st.dataframe(comparison_df, width="stretch", hide_index=True)
                 st.divider()
+                # Export aggregate data for all pinned results
+            st.subheader("📥 Alle Ergebnisse exportieren")
+            col_exp_agg1, col_exp_agg2 = st.columns(2)
+
+            # Aggregate CSV export
+            with col_exp_agg1:
+                aggregate_data = []
+                for pinned in st.session_state.pinned_results:
+                    for detail in pinned["details"]:
+                        ideal_dist = pinned.get("ideal_distances", {}).get(
+                            detail["category"], "N/A"
+                        )
+                        aggregate_data.append(
+                            {
+                                "Adresse": pinned["address"],
+                                "Gesamtscore": f"{pinned['score']:.1f}",
+                                "Suchradius (m)": pinned.get("radius", 1500),
+                                "Kategorie": CATEGORY_NAMES[detail["category"]]
+                                .replace("🛒 ", "")
+                                .replace("👨‍⚕️ ", "")
+                                .replace("🚌 ", "")
+                                .replace("🌳 ", "")
+                                .replace("💼 ", ""),
+                                "Punktzahl": f"{detail['score']:.1f}",
+                                "Nächstes Objekt (m)": f"{detail['nearest_po_dist']:.0f}",
+                                "In der Nähe": detail["count_nearby"],
+                                "Ideale Entfernung (m)": ideal_dist,
+                            }
+                        )
+                aggregate_df = pl.DataFrame(aggregate_data)
+                csv = aggregate_df.write_csv()
+                st.download_button(
+                    label="📥 Alle als CSV",
+                    data=csv,
+                    file_name=f"wohnungsqualitaet-vergleich_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                )
+
+            # Aggregate JSON export
+            with col_exp_agg2:
+                aggregate_json = {
+                    "timestamp": datetime.now().isoformat(),
+                    "anzahl_vergleiche": len(st.session_state.pinned_results),
+                    "ergebnisse": [
+                        {
+                            "adresse": pinned["address"],
+                            "gesamtscore": round(pinned["score"], 1),
+                            "suchradius_meter": pinned.get("radius", 1500),
+                            "zeitstempel": pinned.get("timestamp", ""),
+                            "kategorien": [
+                                {
+                                    "name": detail["category"],
+                                    "punktzahl": round(detail["score"], 1),
+                                    "entfernung_meter": round(
+                                        detail["nearest_po_dist"], 0
+                                    ),
+                                    "anzahl_in_naehe": detail["count_nearby"],
+                                    "ideale_entfernung_meter": pinned.get(
+                                        "ideal_distances", {}
+                                    ).get(detail["category"], None),
+                                }
+                                for detail in pinned["details"]
+                            ],
+                        }
+                        for pinned in st.session_state.pinned_results
+                    ],
+                }
+                import json
+
+                json_str = json.dumps(aggregate_json, ensure_ascii=False, indent=2)
+                st.download_button(
+                    label="📥 Alle als JSON",
+                    data=json_str,
+                    file_name=f"wohnungsqualitaet-vergleich_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json",
+                )
 
     st.divider()
 
